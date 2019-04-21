@@ -5,24 +5,64 @@
 
 $iPID = getmypid();
 
+function fnReadSharedVar($sVarName)
+{
+    $iKey = ftok(__FILE__, $sVarName);
+            
+    $resID = shmop_open($iKey, 'a', 0644, 0);
+    
+    if (!$resID) {
+        throw new Exception(__LINE__.": Can't read block '$sVarName'\n");
+    }
+    
+    $mResult = json_decode(shmop_read($resID, 0, shmop_size($resID)), true);
+        
+    shmop_close($resID);
+    
+    return $mResult;
+}
+
+function fnWriteSharedVar($sVarName, $mVarValue)
+{
+    $sBytes = json_encode($mVarValue);
+            
+    $iKey = ftok(__FILE__, $sVarName);
+    
+    $resID = shmop_open($iKey, 'c', 0644, 0);
+    
+    if (shmop_write($resID, $sBytes, 0)!=strlen($sBytes)) {
+        throw new Exception(__LINE__.": Can't write block '$sVarName'\n");
+    }
+    
+    shmop_close($resID);
+}
+
 function fnProcessExists($iPID) 
 {
     return file_exists("/proc/{$iPID}");
 }
 
+function fnGetMainLoopPID()
+{
+    return (int) fnReadSharedVar('main_loop_pid');
+}
+
+function fnIsMainLoopProccessRunning()
+{
+    return fnProcessExists(fnGetMainLoopPID());
+}
+
 if ($argv[1]=='main_loop') {
-
-    $iKey = ftok(__FILE__, 1);
-
-    $resID = shmop_open($iKey, 'a', 0644, 0);
-
-    if (!$resID) {
-        error_log(__LINE__.": Can't open block\n", 3, "errors.log");
-        exit(1);
-    }
     
-    $sURL = shmop_read($resID, 0, shmop_size($resID));
-
+    while (true) {
+        $aMainLoopParameters = fnReadSharedVar('main_loop_parameters');
+        
+        if ($aMainLoopParameters['bRun']==false) {
+            break;
+        }
+        
+        
+    }
 }
 
 if ($argv[1]=='parse') {
@@ -39,49 +79,36 @@ if (!empty($_POST['ajax'])) {
     try {
     
         if (!empty($_POST['main_loop_status'])) {
-            $iMainLoopPIDKey = ftok(__FILE__, 2);
+            $iMainLoopPID = fnGetMainLoopPID();
             
-            $resID = shmop_open($iMainLoopPIDKey, 'a', 0644, 0);
-            
-            if (!$resID) {
-                throw new Exception(__LINE__.": Can't read block\n");
-            }
-            
-            $iMainLoopPID = (int) shmop_read($resID, 0, shmop_size($resID));
-            
-            $aResult['data'] => [
+            $aResult['data'] = [
                 'bIsRunning' => fnProcessExists($iMainLoopPID),
                 'iPID' => $iMainLoopPID
             ];
-            
-            shmop_close($resID);
         }
         if (!empty($_POST['start'])) {
             
-            $aMainLoopParameters = [];
+            $aMainLoopParameters = [
+                'bRun' => true
+            ];
             
             foreach ($_POST['aURL'] as $sURL) {
-                $aMainLoopParameters[$sURL] = [
+                $aMainLoopParameters['aURLs'][$sURL] = [
                     'aExclude' => $_POST[$sURL]['aExclude'],
                     'bSaveImages' => $_POST[$sURL]['bSaveImages']
-                ]
+                ];
             }
             
-            $sBytes = json_encode($aMainLoopParameters);
+            fnWriteSharedVar('main_loop_parameters', $aMainLoopParameters);
             
-            $iMainLoopParametersKey = ftok(__FILE__, 1);
-            
-            $resID = shmop_open($iMainLoopParametersKey, 'c', 0644, 0);
-            
-            if (shmop_write($resID, $sBytes, 0)!=strlen($sBytes)) {
-                throw new Exception(__LINE__.": Can't write block\n");
+            $sExecLine = 'php '.__FILE__.' main_loop';
+            if (pcntl_exec($sExecLine)===false) {
+                throw new Exception(__LINE__.": Can't start proces '$sExecLine'\n");
             }
-            
-            shmop_close($resID);
         }
         
     } catch(Exception $oException) {
-        error_log($oException->getMessage(), 3, "errors.log");
+        error_log(date("d.m.Y H:i:s")." ".$PID."  ".$oException->getMessage(), 3, "errors.log");
         $aResult['result'] = 'error';
         $aResult['message'] = $oException->getMessage();    
     }
@@ -89,6 +116,58 @@ if (!empty($_POST['ajax'])) {
     die(json_encode($aResult));
 }
 ?>
+
+<style>
+.block { display: block; }
+.inline_block { display: inline-block; }
+.float_left { float: left; }
+.p10 { padding: 10px; }
+.p10_10_0_10 { padding: 10px 10px 0px 10px; }
+.w100 { width: 100%; }
+.w30 { width: 29% }
+.w50 { width: 48% }
+.main-block { text-align: center }
+.center-block { display: inline-block; min-width: 600px; vertical-align: top; }
+.main-block > * { text-align: left; }
+</style>
+
+<div class="main-block">
+    <div class="center-block">
+        <div class="float_left w30">
+            <div class="p10_10_0_10">
+                <input class="w100 block" type="text" id="website-url" placeholder="http://website.com/">
+            </div>
+            <div class="p10_10_0_10">
+                <button class="w50">Add</button>
+                <button class="w50">Remove</button>
+            </div>
+            <div class="p10_10_0_10">
+                <select class="w100 block" size=10>
+                    <option>1</option>
+                    <option>2</option>
+                    <option>3</option>
+                </select>
+            </div>
+        </div>
+        <div class="float_left w30">
+            <div class="p10_10_0_10">
+                <input class="w100 block" type="text" id="options-website-url" placeholder="http://website.com/">
+            </div>
+        </div>
+        <div class="float_left w30">
+            <div class="p10_10_0_10">
+                <div>Processes count: <span id="processes-count"></span></div>
+                <div>Processes: </div>
+                <ul id="processes-list">
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+
+</script>
 
 <!--
 $iKey = ftok(__FILE__, 1);
