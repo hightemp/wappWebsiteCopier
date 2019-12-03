@@ -54,14 +54,20 @@ function fnIsMainLoopProccessRunning()
 
 if ($argv[1]=='main_loop') {
     
-    while (true) {
-        $aMainLoopParameters = fnReadSharedVar('main_loop_parameters');
+    try {
+
+        fnWriteSharedVar('main_loop_pid', $iPID);
         
-        if ($aMainLoopParameters['bRun']==false) {
-            break;
+        while (true) {
+            $aMainLoopParameters = fnReadSharedVar('main_loop_parameters');
+            
+            if ($aMainLoopParameters['bRun']==false) {
+                break;
+            }
         }
         
-        
+    } catch(Exception $oException) {
+        error_log(date("d.m.Y H:i:s")." $iPID ".$oException->getMessage(), 3, "main_loop_errors.log");
     }
 }
 
@@ -71,7 +77,7 @@ if ($argv[1]=='parse') {
 
 if (!empty($_POST['ajax'])) {
     $aResult = [
-        'result' => 'ok',
+        'status' => 'ok',
         'message' => '',
         'data' => []
     ];
@@ -108,8 +114,8 @@ if (!empty($_POST['ajax'])) {
         }
         
     } catch(Exception $oException) {
-        error_log(date("d.m.Y H:i:s")." ".$PID."  ".$oException->getMessage(), 3, "errors.log");
-        $aResult['result'] = 'error';
+        error_log(date("d.m.Y H:i:s")."  ".$oException->getMessage(), 3, "errors.log");
+        $aResult['status'] = 'error';
         $aResult['message'] = $oException->getMessage();    
     }
     
@@ -166,7 +172,54 @@ if (!empty($_POST['ajax'])) {
 </div>
 
 <script>
+    function fnAjax(oData)
+    {
+        "use strict";
 
+        if (oData.url === undefined) {
+            return false;
+        }
+  
+        oMIMEs = {
+            'txt'  : 'text/plain',
+            'json' : 'application/json',
+            'xml'  : 'application/xml'
+        };
+        
+        var sURL      = oData.url === undefined ? false : oData.url;
+        var sMethod   = oData.method === undefined ? 'GET' : oData.method.toUpperCase();
+        var sType     = oData.type === undefined ? 'txt' : oData.type.toLowerCase();
+        var sMIMEType = oMIMEs[oData.type];
+        var oHeaders  = oData.headers === undefined ? {} : oData.headers;
+        var oSendData = oData.data === undefined ? false : oData.data;
+        var fnSuccesscallback = oData.success !== undefined ? oData.success : function() {};
+        var fnErrorcallback   = oData.error !== undefined ? oData.error : function() {};
+        
+        var oAjaxObject = (window.ActiveXObject) ? new ActiveXObject("Microsoft.XMLHTTP") : (XMLHttpRequest && new XMLHttpRequest()) || null;
+        var iAjaxTimeout = window.setTimeout(function () {
+            ajax.abort();
+        }, 6000);
+        
+        if (sMethod === 'GET') {
+            oAjaxObject.open('GET', sURL, true);
+            majax.overrideMime(ajax, mimetype);
+            majax.setReqHeaders(ajax, header);
+            oAjaxObject.send();
+        } else if (sMethod === 'POST') {
+            oAjaxObject.open('POST', sURL, true);
+            majax.overrideMime(ajax, mimetype);
+            majax.setReqHeaders(ajax, header);
+            oAjaxObject.send(sendstring);
+        } else {
+            if (sMethod === 'HEAD') {
+                mimetype = 'none';
+            }
+            oAjaxObject.open(sMethod, sURL, true);
+            majax.overrideMime(ajax, mimetype);
+            majax.setReqHeaders(ajax, header);
+            oAjaxObject.send();
+        }
+    }
 </script>
 
 <!--
